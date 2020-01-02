@@ -40,6 +40,8 @@ import javafx.collections.FXCollections;
 
 public final class PlotFundamentalFreaquency extends Application {
 
+
+    
     private static final Options options = new Options();
     private static final String helpMessage = MethodHandles.lookup().lookupClass().getName() + " [OPTIONS] <WAVFILE>";
 
@@ -129,8 +131,15 @@ public final class PlotFundamentalFreaquency extends Application {
             int maxIndex = peakIndexList[peakIndex];
             double ans;
             if(maxIndex==0 || sampleRate/maxIndex>Le4MusicUtils.f0UpperBound){ ans =  0;}
-                else{ ans = sampleRate/maxIndex;}
+            else{ ans = sampleRate/maxIndex;}
+            ansList[k] = ans;
         }
+
+        
+
+
+
+
         /* データ系列を作成*/
         final ObservableList<XYChart.Data<Number, Number>> data =
             IntStream.range(0, N/hopsize)
@@ -138,8 +147,7 @@ public final class PlotFundamentalFreaquency extends Application {
                     .collect(Collectors.toCollection(FXCollections::observableArrayList));
 
         /* データ系列に名前をつける*/
-        final XYChart.Series<Number, Number> series =
-            new XYChart.Series<>("Waveform", data);
+        final XYChart.Series<Number, Number> series = new XYChart.Series<>("Waveform", data);
 
         /* シフトのサンプル数 */
         final double shiftDuration = Optional.ofNullable(cmd.getOptionValue("shift")).map(Double::parseDouble)
@@ -158,11 +166,7 @@ public final class PlotFundamentalFreaquency extends Application {
         final double[][] specLog = spectrogram.map(sp -> Arrays.stream(sp).mapToDouble(c -> 20.0 * Math.log10(c.abs())).toArray())
                 .toArray(n -> new double[n][]);
 
-        /* 参考： フレーム数と各フレーム先頭位置の時刻 */
-        final double[] times = IntStream.range(0, specLog.length).mapToDouble(i -> i * shiftDuration).toArray();
 
-        /* 参考： 各フーリエ変換係数に対応する周波数 */
-        final double[] freqs = IntStream.range(0, fftSize2).mapToDouble(i -> i * sampleRate / fftSize).toArray();
 
         /* X 軸を作成 */
         final double duration = (specLog.length - 1) * shiftDuration;

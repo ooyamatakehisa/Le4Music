@@ -1,7 +1,9 @@
 import java.lang.invoke.MethodHandles;
 import java.io.File;
 import java.util.Arrays;
+import java.util.ArrayList;
 import java.util.Optional;
+import java.util.stream.Stream;
 import java.util.stream.IntStream;
 import java.util.stream.Collectors;
 import javax.sound.sampled.AudioSystem;
@@ -32,11 +34,14 @@ import org.apache.commons.cli.HelpFormatter;
 
 import org.apache.commons.math3.complex.Complex;
 import org.apache.commons.math3.distribution.NormalDistribution;
+import org.apache.commons.math3.util.MathArrays;
 
 import jp.ac.kyoto_u.kuis.le4music.Le4MusicUtils;
+import jp.ac.kyoto_u.kuis.le4music.LineChartWithSpectrogram;
 import jp.ac.kyoto_u.kuis.le4music.CheckAudioSystem;
 import javax.sound.sampled.LineUnavailableException;
 import jp.ac.kyoto_u.kuis.le4music.Player;
+import jp.ac.kyoto_u.kuis.le4music.AudioFrameListener;
 import static jp.ac.kyoto_u.kuis.le4music.Le4MusicUtils.verbose;
 
 
@@ -113,13 +118,14 @@ public final class Ex1 extends Application {
         wavFileList[2] = new File("u.wav");
         wavFileList[3] = new File("e.wav");
         wavFileList[4] = new File("o.wav");
-        wavFileList[4] = new File(pargs[0]);
+        wavFileList[5] = new File(pargs[0]);  //認識対象のファイル
         final AudioInputStream[] streamList =  new AudioInputStream[6];
         final double[][] waveformList = new double[6][];
         for(int i=0;i<6;i++){
             streamList[i] = AudioSystem.getAudioInputStream(wavFileList[i]);
             waveformList[i] = Le4MusicUtils.readWaveformMonaural(streamList[i]);
         }
+
 
 
         // final double[] waveform = Le4MusicUtils.readWaveformMonaural(stream);
@@ -136,7 +142,7 @@ public final class Ex1 extends Application {
         
         // これが各フレーム長さ
         int forFrameSize = frameSize/8;
-        int hopsize =forFrameSize/8;
+        int hopsize =forFrameSize/2;
 
         /* fftSize = 2ˆp >= forFrameSize を満たすfftSize を求める
             * 2ˆp はシフト演算で求める*/
@@ -151,11 +157,10 @@ public final class Ex1 extends Application {
 
         // ここに各dのcepstrumを足していく。
         final double[][] avgCepstrumArray = new double[5][NumOfCepstrum];
-        final double[][] varCepstrumArray = new double[5][NumOfCepstrum];
+        final double[][] varCepstrumArray = new double[5][NumOfCepstrum];     
+
         
-        
-        
-        for(int charNo=0;charNo5;charNo++){ //それぞれの母音について平均と分散を出す。
+        for(int charNo=0;charNo<5;charNo++){ //それぞれの母音について平均と分散を出す。
             int N = waveformList[charNo].length;
             final Complex[][] cepstrum = new Complex[N-forFrameSize-1][fftSize4];
             int count = 0;
@@ -199,7 +204,6 @@ public final class Ex1 extends Application {
             // ここで各フレームで足したものの平均を求める
             for(int d=0;d<NumOfCepstrum;d++){
                 avgCepstrumArray[charNo][d] /= count;
-                System.out.println(avgCepstrumArray[charNo][d]);
             }
 
             // 分散計算用のシグマのためのloop、各フレームの分散？をたしていく
@@ -214,8 +218,6 @@ public final class Ex1 extends Application {
             }
         }
         
-
-        // System.out.println(avgCepstrumArray);
 
 
         // ここから認識対象のwavをケプストラムに変換する。
@@ -260,97 +262,155 @@ public final class Ex1 extends Application {
                 for(int d=0;d<NumOfCepstrum;d++){
                     normalDistribution[charNo] += Math.log(varCepstrumArray[charNo][d])+(Math.pow(cepstrumRcg[d].getReal()-avgCepstrumArray[charNo][d],2))/(2*Math.pow(varCepstrumArray[charNo][d],2));
                 }
-               
                 normalDistribution[charNo] = -normalDistribution[charNo];
-               
-                
             }
-            //  System.out.println("それぞれのcharの正規分布に入れたときの値:"+normalDistribution[0] + " "+normalDistribution[1] + " "+normalDistribution[2] + " "+normalDistribution[3] + " "+normalDistribution[4]);
 
             count++;
             res[k/hopsize] = Le4MusicUtils.argmax(normalDistribution);
-            System.out.println(Le4MusicUtils.argmax(normalDistribution));
+            // System.out.println(Le4MusicUtils.argmax(normalDistribution));
         }
-        try{
-            CheckAudioSystem.main(args);
 
-        }catch(javax.sound.sampled.LineUnavailableException e){}
+
+
+
+
+
+
+
         
+        /* 窓関数とFFTのサンプル数 */
+        final int fftSizeFF = 1 << Le4MusicUtils.nextPow2(frameSize);
+        final int fftSizeFF2 = (fftSizeFF >> 1) + 1;
 
-        /* データ系列を作成*/
+           // 自己相関関数による基本周波数導出
+        double autocorrelationList[] = new double[N];
+        double ansList[] = new double[N];
+        for(int k=0;k<N-forFrameSize-1;k+=hopsize){ //すべてのフレームについて
+            for(int tau=0;tau<forFrameSize;tau++){ //全てのタウについて
+                double autocorrelation = 0;
+                for(int j=k;j<k+forFrameSize-tau;j++){ //和を求める用のfor
+                    autocorrelation += waveformList[5][j]*waveformList[5][j+tau];
+                }
+                autocorrelationList[tau] = autocorrelation;
+
+            }
+            // あるフレームについて511のAC(自己相関関数)が存在する。各τについて
+            
+            // ピークピッキング
+          
+            double peakList[] = new double[N];
+            int peakIndexList[] = new int[N];
+            for(int m=3;m<autocorrelationList.length;m++){
+                if((autocorrelationList[m-1]-autocorrelationList[m-2]>=0)&&(autocorrelationList[m]-autocorrelationList[m-1]<0)){
+                    peakList[m-3] = autocorrelationList[m-1];
+                    peakIndexList[m-3] = m-1;
+                }            
+            }
+            int peakIndex = Le4MusicUtils.argmax(peakList);
+            int maxIndex = peakIndexList[peakIndex];
+            double ans;
+            if(maxIndex==0 || sampleRate/maxIndex>Le4MusicUtils.f0UpperBound){ ans =  0;}
+            else{ ans = sampleRate/maxIndex;}
+            ansList[k] = ans;
+        }
+         /* データ系列を作成*/
         final ObservableList<XYChart.Data<Number, Number>> data =
-            IntStream.range(0, res.length)
-                     .mapToObj(i -> new XYChart.Data<Number, Number> (i*hopsize / sampleRate, res[i]))
-                     .collect(Collectors.toCollection(FXCollections::observableArrayList));
+            IntStream.range(0, N/hopsize)
+                    .mapToObj(i -> new XYChart.Data<Number, Number>(i*hopsize / sampleRate, ansList[i*hopsize]))
+                    .collect(Collectors.toCollection(FXCollections::observableArrayList));
 
-        
         /* データ系列に名前をつける*/
-        final XYChart.Series<Number, Number> series =
-        new XYChart.Series<>("aiueo", data);
+        final XYChart.Series<Number, Number> series = new XYChart.Series<>("Waveform", data);
+
+
+
+
+
+        // 動かす軸用のデータシリーズ作成
+        ArrayList<XYChart.Data<Number, Number>> vertialArray = new  ArrayList<XYChart.Data<Number, Number>>();
+        vertialArray.add(new XYChart.Data<Number, Number>(0,0));
+        vertialArray.add(new XYChart.Data<Number, Number>(0,2000));
+        ObservableList<XYChart.Data<Number, Number>> verticalData = vertialArray.stream().collect(Collectors.toCollection(FXCollections::observableArrayList));
+        XYChart.Series<Number, Number> verticalSeries = new XYChart.Series<>("Waveform", verticalData);
 
         
-        /* X 軸を作成*/
-        final double duration = (res.length*hopsize - 1) / sampleRate;
-        final NumberAxis xAxis = new NumberAxis(
-            /* axisLabel = */ "Time (seconds)",
-            /* lowerBound = */ 0.0,
-            /* upperBound = */ duration,
-            /* tickUnit = */ Le4MusicUtils.autoTickUnit(duration)
-        );
+
+
+
+
+
+        // ここから認識対象のスペクトログラム表示
+        /* シフトのサンプル数 */
+        final double shiftDuration = Optional.ofNullable(cmd.getOptionValue("shift")).map(Double::parseDouble)
+                .orElse(Le4MusicUtils.frameDuration / 8);
+        final int shiftSize = (int) Math.round(shiftDuration * sampleRate);
+
+        /* 窓関数を求め， それを正規化する */
+        final double[] window = MathArrays.normalizeArray(Arrays.copyOf(Le4MusicUtils.hanning(frameSize), fftSizeFF), 1.0);
+
+        /* 短時間フーリエ変換本体 */
+        final Stream<Complex[]> spectrogram = Le4MusicUtils.sliding(waveformList[5], window, shiftSize)
+                .map(frame -> Le4MusicUtils.rfft(frame));
+
+        /* 複素スペクトログラムを対数振幅スペクトログラムに */
+        final double[][] specLog = spectrogram.map(sp -> Arrays.stream(sp).mapToDouble(c -> 20.0 * Math.log10(c.abs())).toArray())
+                .toArray(n -> new double[n][]);
+
+
+        /* X 軸を作成 */
+        final double duration = (specLog.length - 1) * shiftDuration;
+
+        final NumberAxis xAxis = new NumberAxis(/* axisLabel = */ "Time (seconds)", /* lowerBound = */ 0.0,
+                /* upperBound = */ duration, /* tickUnit = */ Le4MusicUtils.autoTickUnit(duration));
         xAxis.setAnimated(false);
 
-        /* Y 軸を作成*/
-        final double ampLowerBound =
-            Optional.ofNullable(cmd.getOptionValue("amp-lo"))
-                    .map(Double::parseDouble)
-                    .orElse(Le4MusicUtils.spectrumAmplitudeLowerBound);
-        final double ampUpperBound =
-            Optional.ofNullable(cmd.getOptionValue("amp-up"))
-                    .map(Double::parseDouble)
-                    .orElse(Le4MusicUtils.spectrumAmplitudeUpperBound);
-        if (ampUpperBound <= ampLowerBound)
-            throw new IllegalArgumentException(
-                "amp-up must be larger than amp-lo: " +
-                "amp-lo = " + ampLowerBound + ", amp-up = " + ampUpperBound
-            );
-        final NumberAxis yAxis = new NumberAxis(
-            /* axisLabel = */ "Amplitude (dB)",
-
-            /* lowerBound = */ 0,
-            /* upperBound = */ 4,
-            /* tickUnit = */ Le4MusicUtils.autoTickUnit(ampUpperBound - ampLowerBound)
-        );
+        /* Y 軸を作成 */
+        final NumberAxis yAxis = new NumberAxis(/* axisLabel = */ "Frequency (Hz)", /* lowerBound = */ 0.0,
+                /* upperBound = */ /*nyquist*/2000, /* tickUnit = */ Le4MusicUtils.autoTickUnit(nyquist));
         yAxis.setAnimated(false);
 
-        /* チャートを作成*/
-        final LineChart<Number, Number> chart =
-            new LineChart<>(xAxis, yAxis);
-        chart.setTitle("Spectrum");
+        /* チャートを作成 */
+        final LineChartWithSpectrogram<Number, Number> chart = new LineChartWithSpectrogram<>(xAxis, yAxis);
+        chart.setParameters(specLog.length, fftSizeFF2, nyquist);
+        chart.setTitle("Spectrogram");
+        Arrays.stream(specLog).forEach(chart::addSpecLog);
         chart.setCreateSymbols(false);
-        chart.setLegendVisible(false);
+        chart.setLegendVisible(true);
         chart.getData().add(series);
-        /* グラフ描画*/
+        chart.getData().add(verticalSeries);
 
+        
+
+        /* グラフ描画 */
         final Scene scene = new Scene(chart, 800, 600);
         scene.getStylesheets().add("src/le4music.css");
 
-        /* ウインドウ表示*/
+        /* ウインドウ表示 */
         primaryStage.setScene(scene);
         primaryStage.setTitle(getClass().getName());
         primaryStage.show();
 
-        /* チャートを画像ファイルへ出力*/
-        Platform.runLater(() -> {
-            final String[] name_ext = Le4MusicUtils.getFilenameWithImageExt(
-                Optional.ofNullable(cmd.getOptionValue("outfile")),
-                getClass().getSimpleName()
-            );
-            final WritableImage image = scene.snapshot(null);
-            try {
-                ImageIO.write(SwingFXUtils.fromFXImage(image, null),
-                name_ext[1], new File(name_ext[0] + "." + name_ext[1]));
-            } catch (IOException e) { e.printStackTrace(); }
-        });
+
+        try{
+            CheckAudioSystem.main(args);
+        }catch(javax.sound.sampled.LineUnavailableException e){}
+        
+
+
+       // 再生関連
+        try{
+            Player player = Player.builder(wavFileList[5])
+                            .mixer(AudioSystem.getMixerInfo()[1])
+                            .daemon()
+                            .build();
+            player.addAudioFrameListener((frame, position) -> {
+            final double rms = Arrays.stream(frame).map(x -> x * x).average().orElse(0.0);
+            final double logRms = 20.0 * Math.log10(rms);
+            final double posInSec = position / player.getSampleRate();
+            // System.out.printf("Position %d (%.3f sec), RMS %f dB%n", position, posInSec, logRms);
+            });
+            player.start();
+        }catch(LineUnavailableException e){}
     }
 
 }
