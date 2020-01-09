@@ -3,7 +3,7 @@
 }
 /* 変更 */
 .chart-series-line {
-  -fx-stroke-width: 1px;
+  -fx-stroke-width: 5px;
   -fx-effect: null;
   -fx-stroke:rgb(107, 201, 255);
 }

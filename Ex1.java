@@ -1,4 +1,5 @@
 import java.lang.invoke.MethodHandles;
+import java.lang.String;
 import java.io.File;
 import java.util.Arrays;
 import java.util.ArrayList;
@@ -17,12 +18,21 @@ import javax.sound.sampled.Mixer;
 
 import javafx.application.Application;
 import javafx.application.Platform;
+
+import javafx.geometry.Insets; 
+import javafx.geometry.Pos;
+import javafx.geometry.HPos;
+
 import javafx.stage.Stage;
 import javafx.scene.Scene;
 import javafx.scene.chart.XYChart;
 import javafx.scene.chart.LineChart;
 import javafx.scene.chart.NumberAxis;
+import javafx.scene.control.Label;
 import javafx.scene.image.WritableImage;
+import javafx.scene.layout.GridPane; 
+import javafx.scene.layout.ColumnConstraints;
+import javafx.scene.text.*;
 import javafx.collections.ObservableList;
 import javafx.collections.FXCollections;
 import javafx.embed.swing.SwingFXUtils;
@@ -49,6 +59,8 @@ import java.io.IOException;
 import javax.sound.sampled.UnsupportedAudioFileException;
 import javax.sound.sampled.LineUnavailableException;
 import org.apache.commons.cli.ParseException;
+import java.math.BigDecimal;
+ 
 
 public final class Ex1 extends Application {
 
@@ -95,7 +107,8 @@ public final class Ex1 extends Application {
     @Override public final void start(final Stage primaryStage)
         throws IOException,
                UnsupportedAudioFileException,
-               ParseException {
+               ParseException,
+               LineUnavailableException{
         /* コマンドライン引数処理*/
         final String[] args = getParameters().getRaw().toArray(new String[0]);
         final CommandLine cmd = new DefaultParser().parse(options, args);
@@ -232,7 +245,7 @@ public final class Ex1 extends Application {
             final double[] frameArray = Arrays.copyOfRange(waveformList[5], k,k+forFrameSize);
             
             final int fftSizeRcg = 1 << Le4MusicUtils.nextPow2(frameArray.length);
-            final int fftSize2Rcg = (fftSize >> 1) + 1; //2^(p-1)+1 ??
+            final int fftSize2Rcg = (fftSizeRcg >> 1) + 1; //2^(p-1)+1 ??
             final int fftSize3Rcg = fftSize2Rcg -1;
             final double[] srcRcg =
                 Arrays.stream(Arrays.copyOf(frameArray, fftSizeRcg))
@@ -274,15 +287,12 @@ public final class Ex1 extends Application {
 
 
 
-
-
-
-        
+         // 認識対象の音声に対する自己相関関数による基本周波数導出
         /* 窓関数とFFTのサンプル数 */
         final int fftSizeFF = 1 << Le4MusicUtils.nextPow2(frameSize);
         final int fftSizeFF2 = (fftSizeFF >> 1) + 1;
 
-           // 自己相関関数による基本周波数導出
+          
         double autocorrelationList[] = new double[N];
         double ansList[] = new double[N];
         for(int k=0;k<N-forFrameSize-1;k+=hopsize){ //すべてのフレームについて
@@ -327,12 +337,11 @@ public final class Ex1 extends Application {
 
 
         // 動かす軸用のデータシリーズ作成
-        ArrayList<XYChart.Data<Number, Number>> vertialArray = new  ArrayList<XYChart.Data<Number, Number>>();
-        vertialArray.add(new XYChart.Data<Number, Number>(0,0));
-        vertialArray.add(new XYChart.Data<Number, Number>(0,2000));
-        ObservableList<XYChart.Data<Number, Number>> verticalData = vertialArray.stream().collect(Collectors.toCollection(FXCollections::observableArrayList));
+        ObservableList<XYChart.Data<Number, Number>> verticalData = 
+            IntStream.range(0, 2)
+            .mapToObj(i -> new XYChart.Data<Number, Number>(0,i*2000))
+            .collect(Collectors.toCollection(FXCollections::observableArrayList));
         XYChart.Series<Number, Number> verticalSeries = new XYChart.Series<>("Waveform", verticalData);
-
         
 
 
@@ -375,14 +384,156 @@ public final class Ex1 extends Application {
         chart.setTitle("Spectrogram");
         Arrays.stream(specLog).forEach(chart::addSpecLog);
         chart.setCreateSymbols(false);
-        chart.setLegendVisible(true);
+        chart.setLegendVisible(false);
         chart.getData().add(series);
         chart.getData().add(verticalSeries);
+        chart.setAnimated(false);
 
+        verticalSeries.nodeProperty().get().setStyle("-fx-stroke: #ffff00;");
+        verticalSeries.nodeProperty().get().setStyle("-fx-stroke-width: 2px;");
+
+
+
+
+
+
+
+        // ここからスペクトラム表示用のコード
+        final double[] freqs =
+            IntStream.range(0, fftSizeFF2)
+                     .mapToDouble(i -> i * sampleRate / fftSizeFF)
+                     .toArray();
+
+        /* データ系列を作成*/
+        final ObservableList<XYChart.Data<Number, Number>> spectrumData =
+            IntStream.range(0, fftSizeFF2)
+                     .mapToObj(i -> new XYChart.Data<Number, Number>(freqs[i], specLog[0][i]))
+                     .collect(Collectors.toCollection(FXCollections::observableArrayList));
+
+        /* データ系列に名前をつける*/
+        final XYChart.Series<Number, Number> spectrumSeries =
+        new XYChart.Series<>("spectrum", spectrumData);
+
+        /* X 軸を作成*/
+        final double freqLowerBound =
+            Optional.ofNullable(cmd.getOptionValue("freq-lo"))
+                    .map(Double::parseDouble)
+                    .orElse(0.0);
+        if (freqLowerBound < 0.0)
+            throw new IllegalArgumentException(
+                "freq-lo must be non-negative: " + freqLowerBound
+            );
+        final double freqUpperBound =
+            Optional.ofNullable(cmd.getOptionValue("freq-up"))
+                    .map(Double::parseDouble)
+                    .orElse(nyquist);
+        if (freqUpperBound <= freqLowerBound)
+            throw new IllegalArgumentException(
+                "freq-up must be larger than freq-lo: " +
+                "freq-lo = " + freqLowerBound + ", freq-up = " + freqUpperBound
+            );
+        final NumberAxis xAxis2 = new NumberAxis(
+            /* axisLabel = */ "Frequency (Hz)",
+            /* lowerBound = */ freqLowerBound,
+            /* upperBound = */ freqUpperBound,
+            /* tickUnit = */ Le4MusicUtils.autoTickUnit(freqUpperBound - freqLowerBound)
+        );
+        xAxis2.setAnimated(false);
+
+        /* Y 軸を作成*/
+        final double ampLowerBound =
+            Optional.ofNullable(cmd.getOptionValue("amp-lo"))
+                    .map(Double::parseDouble)
+                    .orElse(Le4MusicUtils.spectrumAmplitudeLowerBound);
+        final double ampUpperBound =
+            Optional.ofNullable(cmd.getOptionValue("amp-up"))
+                    .map(Double::parseDouble)
+                    .orElse(Le4MusicUtils.spectrumAmplitudeUpperBound);
+        if (ampUpperBound <= ampLowerBound)
+            throw new IllegalArgumentException(
+                "amp-up must be larger than amp-lo: " +
+                "amp-lo = " + ampLowerBound + ", amp-up = " + ampUpperBound
+            );
+        final NumberAxis yAxis2 = new NumberAxis(
+            /* axisLabel = */ "Amplitude (dB)",
+
+            /* lowerBound = */ -180,
+            /* upperBound = */ ampUpperBound,
+            /* tickUnit = */ Le4MusicUtils.autoTickUnit(ampUpperBound - ampLowerBound)
+        );
+        yAxis2.setAnimated(false);
+
+        /* チャートを作成*/
+        final LineChart<Number, Number> chart2 =
+            new LineChart<>(xAxis2, yAxis2);
+        chart2.setTitle("Spectrum");
+        chart2.setCreateSymbols(false);
+        chart2.setLegendVisible(false);
+        chart2.getData().add(spectrumSeries);
+        chart2.setAnimated(false);
+        spectrumSeries.nodeProperty().get().setStyle("-fx-stroke:red;");
+        spectrumSeries.nodeProperty().get().setStyle("-fx-stroke-width:1px;");
+
+
+
+
+
+        // 認識した母音などを表示するテキストの定義
+        Label vowelText = new Label("Vowel : "); 
+        Label vowelValue = new Label("0"); 
+        
+        Label positionText = new Label("Time[s] : "); 
+        Label positionValue = new Label("0"); 
+
+        Label freaquencyText = new Label("freaquency[Hz] : "); 
+        Label freaquencyValue = new Label("0"); 
         
 
+
+
+
+
+        
+        //Creating a Grid Pane 
+        GridPane gridPane = new GridPane();    
+        gridPane.getColumnConstraints().add(new ColumnConstraints(130)); // column 0 is 100 wide
+        gridPane.getColumnConstraints().add(new ColumnConstraints(130)); // column 1 is 100 wide
+        gridPane.getColumnConstraints().add(new ColumnConstraints(130)); // column 3 is 100 wide
+        gridPane.getColumnConstraints().add(new ColumnConstraints(130)); // column 4 is 100 wide
+        //Setting the padding  
+        gridPane.setPadding(new Insets(10, 10, 10, 10)); 
+        //Setting the vertical and horizontal gaps between the columns 
+        gridPane.setVgap(5); 
+        gridPane.setHgap(5);       
+        //Setting the Grid alignment 
+        gridPane.setAlignment(Pos.CENTER); 
+
+
+        
+        //Arranging all the nodes in the grid 
+        gridPane.add(chart, 0, 0,4,1);
+        gridPane.add(chart2,4,0,1,4); 
+        gridPane.add(vowelText, 1, 2,1,1); 
+        gridPane.add(vowelValue, 2, 2,1,1); 
+
+        gridPane.add(positionText, 1, 1,1,1); 
+        gridPane.add(positionValue, 2, 1,1,1); 
+
+        gridPane.add(freaquencyText, 1, 3,1,1); 
+        gridPane.add(freaquencyValue, 2, 3,1,1); 
+
+        GridPane.setHalignment(chart, HPos.CENTER);
+        GridPane.setHalignment(vowelText, HPos.RIGHT);
+        GridPane.setHalignment(positionText, HPos.RIGHT);
+        GridPane.setHalignment(freaquencyText, HPos.RIGHT);
+        GridPane.setHalignment(vowelValue, HPos.LEFT);
+        GridPane.setHalignment(positionValue, HPos.LEFT);
+        GridPane.setHalignment(freaquencyValue, HPos.LEFT);
+
+
+
         /* グラフ描画 */
-        final Scene scene = new Scene(chart, 800, 600);
+        final Scene scene = new Scene(gridPane);
         scene.getStylesheets().add("src/le4music.css");
 
         /* ウインドウ表示 */
@@ -391,26 +542,52 @@ public final class Ex1 extends Application {
         primaryStage.show();
 
 
-        try{
-            CheckAudioSystem.main(args);
-        }catch(javax.sound.sampled.LineUnavailableException e){}
-        
-
+      
 
        // 再生関連
-        try{
-            Player player = Player.builder(wavFileList[5])
-                            .mixer(AudioSystem.getMixerInfo()[1])
-                            .daemon()
-                            .build();
-            player.addAudioFrameListener((frame, position) -> {
-            final double rms = Arrays.stream(frame).map(x -> x * x).average().orElse(0.0);
-            final double logRms = 20.0 * Math.log10(rms);
-            final double posInSec = position / player.getSampleRate();
-            // System.out.printf("Position %d (%.3f sec), RMS %f dB%n", position, posInSec, logRms);
-            });
-            player.start();
-        }catch(LineUnavailableException e){}
+        Player player = Player.builder(wavFileList[5])
+                        .mixer(AudioSystem.getMixerInfo()[1])
+                        .daemon()
+                        .build();
+        player.addAudioFrameListener((frame, position) -> Platform.runLater(() -> {
+            verticalData.clear();
+            XYChart.Data<Number, Number> a = new XYChart.Data<Number, Number>(position/ sampleRate,0);
+            XYChart.Data<Number, Number> b = new XYChart.Data<Number, Number>(position/ sampleRate,2000);
+            verticalData.addAll(a,b);
+
+
+            
+            // 母音表示
+            String vowel = "";
+            if(res[position/hopsize]==0){ vowel = "a"; }
+            else if(res[position/hopsize]==1){ vowel = "i";}
+            else if(res[position/hopsize]==2){ vowel = "u";}
+            else if(res[position/hopsize]==3){ vowel = "e";}
+            else if(res[position/hopsize]==4){ vowel = "o";}
+            vowelValue.setText(vowel);
+
+            freaquencyValue.setText(String.valueOf(ansList[position/hopsize*hopsize]));
+
+
+            // 再生位置表示
+            BigDecimal bd = new BigDecimal(position/ sampleRate );
+            BigDecimal bd2 = bd.setScale(1, BigDecimal.ROUND_DOWN);
+            positionValue.setText(bd2.toString());
+
+
+            // スペクトラム
+            spectrumData.clear();
+            // for(int i=0;i<specLog[position/shiftSize].length;i++){
+            //     spectrumData.addAll(new XYChart.Data<Number, Number>(freqs[i], specLog[position/shiftSize][i]));
+            // }
+            spectrumData.addAll(IntStream.range(0,specLog[position/shiftSize].length)
+                .mapToObj(i -> new XYChart.Data<Number, Number>(freqs[i], specLog[position/shiftSize][i]))
+                .collect(Collectors.toList()));
+
+        }));
+        
+
+        Platform.runLater(player::start);
     }
 
 }
