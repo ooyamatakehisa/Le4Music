@@ -509,7 +509,7 @@ public final class Ex1 extends Application {
         gridPane.setAlignment(Pos.CENTER); 
 
 
-        
+
         //Arranging all the nodes in the grid 
         gridPane.add(chart, 0, 0,4,1);
         gridPane.add(chart2,4,0,1,4); 
@@ -542,7 +542,7 @@ public final class Ex1 extends Application {
         primaryStage.show();
 
 
-      
+ 
 
        // 再生関連
         Player player = Player.builder(wavFileList[5])
