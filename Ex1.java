@@ -3,6 +3,7 @@ import java.lang.String;
 import java.io.File;
 import java.util.Arrays;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.Optional;
 import java.util.stream.Stream;
 import java.util.stream.IntStream;
@@ -26,7 +27,6 @@ import javafx.geometry.HPos;
 import javafx.stage.Stage;
 import javafx.scene.Scene;
 import javafx.scene.chart.XYChart;
-import javafx.scene.chart.LineChart;
 import javafx.scene.chart.NumberAxis;
 import javafx.scene.control.Label;
 import javafx.scene.image.WritableImage;
@@ -280,7 +280,6 @@ public final class Ex1 extends Application {
 
             count++;
             res[k/hopsize] = Le4MusicUtils.argmax(normalDistribution);
-            // System.out.println(Le4MusicUtils.argmax(normalDistribution));
         }
 
 
@@ -304,10 +303,9 @@ public final class Ex1 extends Application {
                 autocorrelationList[tau] = autocorrelation;
 
             }
-            // あるフレームについて511のAC(自己相関関数)が存在する。各τについて
+            // あるフレームについてAC(自己相関関数)が存在する。各τについて
             
             // ピークピッキング
-          
             double peakList[] = new double[N];
             int peakIndexList[] = new int[N];
             for(int m=3;m<autocorrelationList.length;m++){
@@ -336,7 +334,7 @@ public final class Ex1 extends Application {
 
 
 
-        // 動かす軸用のデータシリーズ作成
+        // 動かす垂直方向の軸用のデータシリーズ作成
         ObservableList<XYChart.Data<Number, Number>> verticalData = 
             IntStream.range(0, 2)
             .mapToObj(i -> new XYChart.Data<Number, Number>(0,i*2000))
@@ -478,54 +476,90 @@ public final class Ex1 extends Application {
 
 
 
-        // 認識した母音などを表示するテキストの定義
+        // 認識した母音や再生位置、RMS、音程、基本周波数などを表示するテキストの定義
         Label vowelText = new Label("Vowel : "); 
         Label vowelValue = new Label("0"); 
         
         Label positionText = new Label("Time[s] : "); 
         Label positionValue = new Label("0"); 
 
+        Label rmsText = new Label("RMS[dB] : "); 
+        Label rmsValue = new Label("0"); 
+
         Label freaquencyText = new Label("freaquency[Hz] : "); 
         Label freaquencyValue = new Label("0"); 
         
+        Label noteText = new Label("Note : "); 
+        Label noteValue = new Label("0"); 
 
+
+        // このハッシュマップを用いて周波数から音程のストリングに変換する。
+        HashMap<Integer, String> hmap = new HashMap<Integer, String>();
+        hmap.put(1, "C");
+        hmap.put(2, "C#");
+        hmap.put(3, "D");
+        hmap.put(4, "D#");
+        hmap.put(5, "E");
+        hmap.put(6, "F");
+        hmap.put(7, "F#");
+        hmap.put(8, "G");
+        hmap.put(9, "G#");
+        hmap.put(10, "A");
+        hmap.put(11, "A#");
+        hmap.put(12, "B");
 
 
 
 
         
-        //Creating a Grid Pane 
+        //GridPaneの初期化
         GridPane gridPane = new GridPane();    
+
+        // 各カラムの幅を規定する。
         gridPane.getColumnConstraints().add(new ColumnConstraints(130)); // column 0 is 100 wide
         gridPane.getColumnConstraints().add(new ColumnConstraints(130)); // column 1 is 100 wide
         gridPane.getColumnConstraints().add(new ColumnConstraints(130)); // column 3 is 100 wide
         gridPane.getColumnConstraints().add(new ColumnConstraints(130)); // column 4 is 100 wide
-        //Setting the padding  
+
+        //paddingを定める
         gridPane.setPadding(new Insets(10, 10, 10, 10)); 
-        //Setting the vertical and horizontal gaps between the columns 
+
+        //それぞれのグリッド間のスペースを水平方向と垂直方向それぞれについて定める
         gridPane.setVgap(5); 
         gridPane.setHgap(5);       
-        //Setting the Grid alignment 
+
+        //グリッドアライメントを定める
         gridPane.setAlignment(Pos.CENTER); 
 
 
 
-        //Arranging all the nodes in the grid 
+        //それぞれのノードを各座標に配置する。
         gridPane.add(chart, 0, 0,4,1);
         gridPane.add(chart2,4,0,1,4); 
-        gridPane.add(vowelText, 1, 2,1,1); 
-        gridPane.add(vowelValue, 2, 2,1,1); 
 
         gridPane.add(positionText, 1, 1,1,1); 
         gridPane.add(positionValue, 2, 1,1,1); 
 
+        gridPane.add(rmsText, 1, 2,1,1); 
+        gridPane.add(rmsValue, 2, 2,1,1); 
+
+        gridPane.add(vowelText, 1, 5,1,1); 
+        gridPane.add(vowelValue, 2, 5,1,1); 
+
         gridPane.add(freaquencyText, 1, 3,1,1); 
         gridPane.add(freaquencyValue, 2, 3,1,1); 
 
+        gridPane.add(noteText, 1, 4,1,1); 
+        gridPane.add(noteValue, 2, 4,1,1); 
+
+
+        // 各ノードの配置座標内でのアラインメントを定める
         GridPane.setHalignment(chart, HPos.CENTER);
         GridPane.setHalignment(vowelText, HPos.RIGHT);
         GridPane.setHalignment(positionText, HPos.RIGHT);
         GridPane.setHalignment(freaquencyText, HPos.RIGHT);
+        GridPane.setHalignment(noteText, HPos.RIGHT);
+        GridPane.setHalignment(rmsText, HPos.RIGHT);
         GridPane.setHalignment(vowelValue, HPos.LEFT);
         GridPane.setHalignment(positionValue, HPos.LEFT);
         GridPane.setHalignment(freaquencyValue, HPos.LEFT);
@@ -544,45 +578,56 @@ public final class Ex1 extends Application {
 
  
 
-       // 再生関連
+       // 再生時に毎回行う処理をaddAudioFramListenerにラムダ関数として渡す
         Player player = Player.builder(wavFileList[5])
                         .mixer(AudioSystem.getMixerInfo()[1])
                         .daemon()
                         .build();
         player.addAudioFrameListener((frame, position) -> Platform.runLater(() -> {
+            // 再生位置表示のための垂直線描画、前のデータを消し新たなデータを追加
             verticalData.clear();
             XYChart.Data<Number, Number> a = new XYChart.Data<Number, Number>(position/ sampleRate,0);
             XYChart.Data<Number, Number> b = new XYChart.Data<Number, Number>(position/ sampleRate,2000);
             verticalData.addAll(a,b);
 
-
+            // RMS表示（対数変換込）
+            final double rms = Arrays.stream(frame).map(x -> x * x).average().orElse(0.0);
+            final double logRms = 20.0 * Math.log10(rms);
+            rmsValue.setText(String.valueOf(logRms));
             
-            // 母音表示
+            // 母音テキスト更新
             String vowel = "";
-            if(res[position/hopsize]==0){ vowel = "a"; }
-            else if(res[position/hopsize]==1){ vowel = "i";}
-            else if(res[position/hopsize]==2){ vowel = "u";}
-            else if(res[position/hopsize]==3){ vowel = "e";}
-            else if(res[position/hopsize]==4){ vowel = "o";}
+            if(position/hopsize<res.length){
+                if(res[position/hopsize]==0){ vowel = "a"; }
+                else if(res[position/hopsize]==1){ vowel = "i";}
+                else if(res[position/hopsize]==2){ vowel = "u";}
+                else if(res[position/hopsize]==3){ vowel = "e";}
+                else if(res[position/hopsize]==4){ vowel = "o";}
+            }
             vowelValue.setText(vowel);
 
+
+            // 基本周波数テキスト更新
             freaquencyValue.setText(String.valueOf(ansList[position/hopsize*hopsize]));
 
 
-            // 再生位置表示
+            // 再生位置のテキスト更新
             BigDecimal bd = new BigDecimal(position/ sampleRate );
             BigDecimal bd2 = bd.setScale(1, BigDecimal.ROUND_DOWN);
             positionValue.setText(bd2.toString());
 
 
-            // スペクトラム
+            // スペクトラム更新
             spectrumData.clear();
-            // for(int i=0;i<specLog[position/shiftSize].length;i++){
-            //     spectrumData.addAll(new XYChart.Data<Number, Number>(freqs[i], specLog[position/shiftSize][i]));
-            // }
-            spectrumData.addAll(IntStream.range(0,specLog[position/shiftSize].length)
-                .mapToObj(i -> new XYChart.Data<Number, Number>(freqs[i], specLog[position/shiftSize][i]))
-                .collect(Collectors.toList()));
+            if(position/shiftSize<specLog.length){
+                spectrumData.addAll(IntStream.range(0,specLog[position/shiftSize].length)
+                    .mapToObj(i -> new XYChart.Data<Number, Number>(freqs[i], specLog[position/shiftSize][i]))
+                    .collect(Collectors.toList()));
+            }
+
+            // 音程テキスト更新
+            int noteNumber = 1 + ((int) Le4MusicUtils.hz2nn(ansList[position/hopsize*hopsize])) % 12;
+            noteValue.setText(hmap.get(noteNumber));
 
         }));
         

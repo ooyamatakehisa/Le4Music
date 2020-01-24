@@ -2,11 +2,17 @@
   -fx-font-size: 2.0em;
 }
 /* 変更 */
-.chart-series-line {
+/* .chart-series-line {
   -fx-stroke-width: 5px;
   -fx-effect: null;
   -fx-stroke:rgb(107, 201, 255);
-}
+} */
+.default-color0.chart-series-line { -fx-stroke: #72e8ec; }
+.default-color1.chart-series-line { 
+  -fx-stroke: #dda0dd9b;
+  -fx-stroke-width:5px;
+
+   }
 
 .on-spectrogram .chart-series-line {
   -fx-stroke: rgba(0, 255, 255, 0.7);
